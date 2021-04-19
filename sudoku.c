@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
   int sudokuSize = readSudokuPuzzle(argv[1], &grid);
   bool valid = false;
   bool complete = false;
-  checkPuzzle(sudokuSize, grid, &valid, &complete);
+  checkPuzzle(sudokuSize, grid, &complete, &valid);
   printf("Complete puzzle? ");
   printf(complete ? "true\n" : "false\n");
   if (complete) {
