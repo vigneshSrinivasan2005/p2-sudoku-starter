@@ -50,12 +50,13 @@ void *checkBoxes(void *arg) {
     for (int j = 1; j <= numBoxesPerCol; j++) {
       // for each box
       bool *seen = (bool *)malloc((psize + 1) * sizeof(bool));
-      bzero(seen, (psize + 1) * sizeof(bool));
+      memset(seen, 0, (psize + 1) * sizeof(bool));
       for (int row = (i - 1) * boxSize + 1; row <= i * boxSize; row++) {
         for (int col = (j - 1) * boxSize + 1; col <= j * boxSize; col++) {
           if (grid[row][col] != 0) {
             if (seen[grid[row][col]]) {
               *valid = false;
+              free(seen);
               return NULL;
             } else {
               seen[grid[row][col]] = true;
@@ -79,12 +80,13 @@ void *checkCols(void *arg) {
   // use a boolean array to track seen numbers
   for (int col = 1; col < psize + 1; col++) {
     bool *seen = (bool *)malloc((psize + 1) * sizeof(bool));
-    bzero(seen, (psize + 1) * sizeof(bool));
+    memset(seen, 0, (psize + 1) * sizeof(bool));
     for (int row = 1; row < psize + 1; row++) {
       if (grid[row][col] != 0) {
         // if already seen
         if (seen[grid[row][col]]) {
           *valid = false;
+          free(seen);
           return NULL;
         } else {
           seen[grid[row][col]] = true;
@@ -106,12 +108,13 @@ void *checkRows(void *arg) {
   // use a boolean array to track seen numbers
   for (int row = 1; row < psize + 1; row++) {
     bool *seen = (bool *)malloc((psize + 1) * sizeof(bool));
-    bzero(seen, (psize + 1) * sizeof(bool));
+    memset(seen, 0, (psize + 1) * sizeof(bool));
     for (int col = 1; col < psize + 1; col++) {
       if (grid[row][col] != 0) {
         // if already seen
         if (seen[grid[row][col]]) {
           *valid = false;
+          free(seen);
           return NULL;
         } else {
           seen[grid[row][col]] = true;
@@ -285,12 +288,10 @@ void solveSudokuPuzzle(int psize, int **grid, int **answerGrid) {
   }
   copyGrid(psize, grid, temp);
   Stack_push(&stack, temp); // dont want to free the original grid
-  bool solved = false;
-  while (!Stack_isEmpty(&stack) && !solved) {
+  while (!Stack_isEmpty(&stack)) {
     int **currentGrid = Stack_pop(&stack);
     if (isCompleteGrid(psize, currentGrid)) {
       // before pushes check validity
-      solved = true;
       copyGrid(psize, currentGrid, answerGrid);
       freeGrid(psize, currentGrid);
       break;
