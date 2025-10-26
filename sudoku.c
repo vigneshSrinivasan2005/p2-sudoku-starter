@@ -19,7 +19,7 @@ void* checkBoxes(void* arg);
 void* checkComplete(void* arg);
 
 void* checkComplete(void* arg) {
-  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  pthreadArgs *tp = (pthreadArgs *)arg;
   int psize = tp->psize;
   int **grid = tp->grid;
   bool *complete = tp->valid; //use valid pointer to indicate completeness
@@ -36,7 +36,7 @@ void* checkComplete(void* arg) {
 }
 
 void* checkBoxes(void* arg){
-  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  pthreadArgs *tp = (pthreadArgs *)arg;
   int psize = tp->psize;
   int **grid = tp->grid;
   bool *valid = tp->valid;
@@ -66,10 +66,11 @@ void* checkBoxes(void* arg){
       free(seen);
     }
   }
+  return NULL;
 }
 
 void* checkCols(void* arg) {
-  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  pthreadArgs *tp = (pthreadArgs *)arg;
   int psize = tp->psize;
   int **grid = tp->grid;
   bool *valid = tp->valid;
@@ -93,10 +94,11 @@ void* checkCols(void* arg) {
       }
       free(seen);
   }
+  return NULL;
 }
 
 void* checkRows(void* arg) {
-  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  pthreadArgs *tp = (pthreadArgs *)arg;
   int psize = tp->psize;
   int **grid = tp->grid;
   bool *valid = tp->valid;
@@ -138,24 +140,44 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   *complete = true;
   //assume valid and set to invalid in the threads
   pthread_t rowThread, colThread, boxThread, completeThread;
-  pthreadArgs args;
-  args.psize = psize;
-  args.grid = grid;
-  args.valid = valid;
-  pthread_create(&rowThread, NULL, checkRows, (void*)&args);
-  pthread_create(&colThread, NULL, checkCols, (void*)&args);
-  pthread_create(&boxThread, NULL, checkBoxes, (void*)&args);
-  pthreadArgs args2;
-  args2.psize = psize;
-  args2.grid = grid;
-  args2.valid = complete; //reuse valid pointer to indicate completeness
-  pthread_create(&completeThread, NULL, checkComplete, (void*)&args2);
+  // allocate separate argument structs for each thread so each thread
+  // receives a stable pointer (avoid passing address of a single stack
+  // local that might be reused/modified)
+  pthreadArgs *argsRow = (pthreadArgs *)malloc(sizeof(pthreadArgs));
+  pthreadArgs *argsCol = (pthreadArgs *)malloc(sizeof(pthreadArgs));
+  pthreadArgs *argsBox = (pthreadArgs *)malloc(sizeof(pthreadArgs));
+  pthreadArgs *argsComplete = (pthreadArgs *)malloc(sizeof(pthreadArgs));
+
+  argsRow->psize = psize;
+  argsRow->grid = grid;
+  argsRow->valid = valid;
+
+  argsCol->psize = psize;
+  argsCol->grid = grid;
+  argsCol->valid = valid;
+
+  argsBox->psize = psize;
+  argsBox->grid = grid;
+  argsBox->valid = valid;
+
+  argsComplete->psize = psize;
+  argsComplete->grid = grid;
+  argsComplete->valid = complete; // indicate completeness via this pointer
+
+  pthread_create(&rowThread, NULL, checkRows, (void*)argsRow);
+  pthread_create(&colThread, NULL, checkCols, (void*)argsCol);
+  pthread_create(&boxThread, NULL, checkBoxes, (void*)argsBox);
+  pthread_create(&completeThread, NULL, checkComplete, (void*)argsComplete);
+
   pthread_join(rowThread, NULL);
   pthread_join(colThread, NULL);
   pthread_join(boxThread, NULL);
   pthread_join(completeThread, NULL);
-  printf("Threads done\n");
-  printf("Valid: %d, Complete: %d\n", *valid, *complete);
+
+  free(argsRow);
+  free(argsCol);
+  free(argsBox);
+  free(argsComplete);
 }
 
 // takes filename and pointer to grid[][]
