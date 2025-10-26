@@ -7,6 +7,11 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+
+
+int NUM_THREADS = 12; //number of threads in thread pool for solving puzzles
+pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 typedef struct {
     int psize;
     int **grid;
@@ -140,9 +145,7 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   *complete = true;
   //assume valid and set to invalid in the threads
   pthread_t rowThread, colThread, boxThread, completeThread;
-  // allocate separate argument structs for each thread so each thread
-  // receives a stable pointer (avoid passing address of a single stack
-  // local that might be reused/modified)
+
   pthreadArgs *argsRow = (pthreadArgs *)malloc(sizeof(pthreadArgs));
   pthreadArgs *argsCol = (pthreadArgs *)malloc(sizeof(pthreadArgs));
   pthreadArgs *argsBox = (pthreadArgs *)malloc(sizeof(pthreadArgs));
@@ -162,7 +165,7 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
 
   argsComplete->psize = psize;
   argsComplete->grid = grid;
-  argsComplete->valid = complete; // indicate completeness via this pointer
+  argsComplete->valid = complete; // completeness using valid pointer
 
   pthread_create(&rowThread, NULL, checkRows, (void*)argsRow);
   pthread_create(&colThread, NULL, checkCols, (void*)argsCol);
@@ -178,6 +181,165 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   free(argsCol);
   free(argsBox);
   free(argsComplete);
+}
+
+
+bool isValidSudoku(int psize, int **grid, int row, int col, int num){ //helper function to check if placing num at grid[row][col] is valid
+  //more effient to only check changed row, column, and box
+  bool valid = true;
+  //check row
+  for(int c=1;c<=psize;c++){
+    if(grid[row][c]==num){
+      valid = false;
+      return valid;
+    }
+  }
+  //check column
+  for(int r=1;r<=psize;r++){
+    if(grid[r][col]==num){
+      valid = false;
+      return valid;
+    }
+  }
+  //check box
+  int boxSize = (int)sqrt(psize);
+  int boxRowStart = ((row -1)/boxSize)*boxSize +1;
+  int boxColStart = ((col -1)/boxSize)*boxSize +1;
+  for(int r=boxRowStart; r<boxRowStart + boxSize; r++){
+    for(int c=boxColStart; c<boxColStart + boxSize; c++){
+      if(grid[r][c]==num){
+        valid = false;
+        return valid;
+      }
+    }
+  }
+  return valid;
+}
+
+void copyGrid(int psize, int **source, int **dest){
+  for(int i=1;i<=psize;i++){
+    for(int j=1;j<=psize;j++){
+      dest[i][j] = source[i][j];
+    }
+  }
+}
+
+bool isCompleteGrid(int psize, int **grid){
+  for(int i=1;i<=psize;i++){
+    for(int j=1;j<=psize;j++){
+      if(grid[i][j]==0){
+        return false;
+      }
+    }
+  }
+  return true;
+}
+void freeGrid(int psize, int **grid){
+  for(int i=1;i<=psize;i++){
+    free(grid[i]);
+  }
+  free(grid);
+}
+// This struct holds a single element of the stack
+struct Node {
+    int **data;
+    struct Node* next; // Pointer to the next item in the stack
+};
+
+// Making a Stack struct to enable backtracking
+typedef struct Stack {
+    struct Node* top;
+} Stack;
+
+void Stack_push(Stack* stack, int **data) {
+    struct Node* newNode = (struct Node*)malloc(sizeof(struct Node));
+    newNode->data = data;
+    newNode->next = stack->top;
+    stack->top = newNode;
+}
+
+int** Stack_pop(Stack* stack) {
+    if (stack->top == NULL) {
+        return NULL; // Stack is empty
+    }
+    struct Node* temp = stack->top;
+    int** poppedData = temp->data;
+    stack->top = stack->top->next;
+    free(temp);
+    return poppedData;
+}
+
+int Stack_free(int psize, Stack* stack) {
+    int count = 0;
+    while (stack->top != NULL) {
+        int** poppedData = Stack_pop(stack);
+        freeGrid(psize, poppedData);
+        count++;
+    }
+    return count;
+}
+
+int Stack_isEmpty(Stack* stack) {
+    return stack->top == NULL;
+}
+
+void solveSudokuPuzzle(int psize, int **grid, int **answerGrid) {
+  //coding a basic backtracking solver here
+  //need to push grid states into a stack to backtrack
+  Stack stack;
+  stack.top = NULL;
+  int **temp = (int **)malloc((psize + 1) * sizeof(int *));
+  for (int row = 1; row <= psize; row++) {
+    temp[row] = (int *)malloc((psize + 1) * sizeof(int));
+  }
+  copyGrid(psize, grid, temp);
+  Stack_push(&stack, temp);//dont want to free the original grid
+  bool solved = false;
+  while(!Stack_isEmpty(&stack) && !solved){
+    int **currentGrid = Stack_pop(&stack);
+    if(isCompleteGrid(psize, currentGrid)){
+      //before pushes check validity
+      solved = true;
+      copyGrid(psize, currentGrid, answerGrid);
+      freeGrid(psize, currentGrid);
+      break;
+    }
+    //find first empty cell
+    int emptyRow = -1;
+    int emptyCol = -1;
+    //loop through grid to find empty cell
+    for(int i=1;i<=psize;i++){
+      for(int j=1;j<=psize;j++){
+        if(currentGrid[i][j]==0){
+          emptyRow = i;
+          emptyCol = j;
+          break;
+        }
+      }
+      if(emptyRow != -1){
+        break;
+      }
+    }
+
+    //we know there is an empty cell because not complete
+    //place all possible numbers into empty cell if valid
+    for(int num=1;num<=psize;num++){
+      if(isValidSudoku(psize, currentGrid, emptyRow, emptyCol, num)){//if valiid after placing num
+        //create new grid state
+        int **newGrid = (int **)malloc((psize + 1) * sizeof(int *));
+        for (int row = 1; row <= psize; row++) {
+          newGrid[row] = (int *)malloc((psize + 1) * sizeof(int));
+        }
+        copyGrid(psize, currentGrid, newGrid);
+        newGrid[emptyRow][emptyCol] = num;
+        Stack_push(&stack, newGrid);
+      }
+    }
+
+    freeGrid(psize, currentGrid);
+  }
+
+  Stack_free(psize, &stack);
 }
 
 // takes filename and pointer to grid[][]
@@ -215,6 +377,7 @@ void printSudokuPuzzle(int psize, int **grid) {
   printf("\n");
 }
 
+
 // takes puzzle size and grid[][]
 // frees the memory allocated
 void deleteSudokuPuzzle(int psize, int **grid) {
@@ -244,6 +407,21 @@ int main(int argc, char **argv) {
     printf(valid ? "true\n" : "false\n");
   }
   printSudokuPuzzle(sudokuSize, grid);
+  //add section for solving incomplete puzzles
+  if (!complete&&valid) {
+    //solve the puzzle
+    printf("Solving puzzle...\n");
+    int **answerGrid = (int **)malloc((sudokuSize + 1) * sizeof(int *));
+    for (int row = 1; row <= sudokuSize; row++) {
+      answerGrid[row] = (int *)malloc((sudokuSize + 1) * sizeof(int));
+    }
+    solveSudokuPuzzle(sudokuSize, grid, answerGrid);
+    printf("Solved puzzle:\n");
+    printSudokuPuzzle(sudokuSize, answerGrid);
+    deleteSudokuPuzzle(sudokuSize, answerGrid);
+    
+
+  }
   deleteSudokuPuzzle(sudokuSize, grid);
   return EXIT_SUCCESS;
 }
