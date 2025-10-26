@@ -4,8 +4,126 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <math.h>
+#include <string.h>
 #include <stdlib.h>
+typedef struct {
+    int psize;
+    int **grid;
+    bool *valid;
+} pthreadArgs;
 
+void* checkRows(void* arg);
+void* checkCols(void* arg);
+void* checkBoxes(void* arg);
+void* checkComplete(void* arg);
+
+void* checkComplete(void* arg) {
+  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  int psize = tp->psize;
+  int **grid = tp->grid;
+  bool *complete = tp->valid; //use valid pointer to indicate completeness
+
+  for(int row=1; row<psize+1;row++){
+      for(int col=1; col<psize+1;col++){
+        if(grid[row][col] == 0){
+          *complete = false;
+          return NULL;
+        }
+      }
+  }
+  return NULL;
+}
+
+void* checkBoxes(void* arg){
+  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  int psize = tp->psize;
+  int **grid = tp->grid;
+  bool *valid = tp->valid;
+
+  int boxSize = (int)sqrt(psize);
+  int numBoxesPerRow = psize / boxSize;
+  int numBoxesPerCol = psize / boxSize;
+
+  for(int i=1; i<=numBoxesPerRow;i++){
+    for(int j=1;j<=numBoxesPerCol;j++){
+      //for each box
+      bool *seen = (bool *)malloc((psize+1) * sizeof(bool));
+      bzero(seen, (psize+1)*sizeof(bool));
+      for(int row= (i-1)*boxSize +1; row<= i*boxSize; row++){
+        for(int col= (j-1)*boxSize +1; col<= j*boxSize; col++){
+          if(grid[row][col] !=0){
+            if(seen[grid[row][col]]){
+              *valid = false;
+              return NULL;
+            }
+            else{
+              seen[grid[row][col]] = true;
+            }
+          }
+        }
+      }
+      free(seen);
+    }
+  }
+}
+
+void* checkCols(void* arg) {
+  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  int psize = tp->psize;
+  int **grid = tp->grid;
+  bool *valid = tp->valid;
+
+  //now we loop through each row checking if each number appears once
+  //use a boolean array to track seen numbers
+  for(int col=1; col<psize+1;col++){
+      bool *seen = (bool *)malloc((psize+1) * sizeof(bool));
+      bzero(seen, (psize+1)*sizeof(bool));
+      for(int row=1; row<psize+1;row++){
+        if(grid[row][col] != 0){
+          //if already seen
+          if(seen[grid[row][col]]){
+            *valid = false;
+            return NULL;
+          }
+          else{
+            seen[grid[row][col]] = true;
+          }
+        }
+      }
+      free(seen);
+  }
+}
+
+void* checkRows(void* arg) {
+  struct pthreadArgs *tp = (struct pthreadArgs *)arg;
+  int psize = tp->psize;
+  int **grid = tp->grid;
+  bool *valid = tp->valid;
+
+  //now we loop through each row checking if each number appears once
+  //use a boolean array to track seen numbers
+  for(int row=1; row<psize+1;row++){
+      bool *seen = (bool *)malloc((psize+1) * sizeof(bool));
+      bzero(seen, (psize+1)*sizeof(bool));
+      for(int col=1; col<psize+1;col++){
+        if(grid[row][col] != 0){
+          //if already seen
+          if(seen[grid[row][col]]){
+            *valid = false;
+            return NULL;
+          }
+          else{
+            seen[grid[row][col]] = true;
+          }
+        }
+      }
+      free(seen);
+  }
+
+
+  return NULL;
+}
 // takes puzzle size and grid[][] representing sudoku puzzle
 // and tow booleans to be assigned: complete and valid.
 // row-0 and column-0 is ignored for convenience, so a 9x9 puzzle
@@ -15,8 +133,29 @@
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   // YOUR CODE GOES HERE and in HELPER FUNCTIONS
+  
   *valid = true;
   *complete = true;
+  //assume valid and set to invalid in the threads
+  pthread_t rowThread, colThread, boxThread, completeThread;
+  pthreadArgs args;
+  args.psize = psize;
+  args.grid = grid;
+  args.valid = valid;
+  pthread_create(&rowThread, NULL, checkRows, (void*)&args);
+  pthread_create(&colThread, NULL, checkCols, (void*)&args);
+  pthread_create(&boxThread, NULL, checkBoxes, (void*)&args);
+  pthreadArgs args2;
+  args2.psize = psize;
+  args2.grid = grid;
+  args2.valid = complete; //reuse valid pointer to indicate completeness
+  pthread_create(&completeThread, NULL, checkComplete, (void*)&args2);
+  pthread_join(rowThread, NULL);
+  pthread_join(colThread, NULL);
+  pthread_join(boxThread, NULL);
+  pthread_join(completeThread, NULL);
+  printf("Threads done\n");
+  printf("Valid: %d, Complete: %d\n", *valid, *complete);
 }
 
 // takes filename and pointer to grid[][]
